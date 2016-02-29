@@ -264,7 +264,7 @@ end
 
 function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.0, f=ftest)
 
-	x = t[0:0.001:1;]
+	x = t[0:0.0005:1;]
 	y = f(x * 2pi)
 
 	nn = FFBPNet{t}(layout, learningRate = lr, momentum = m)
@@ -272,7 +272,7 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 	idx = collect(1:length(x))
 	shuffle!(idx)
 	
-	cvPart = floor(Int, length(idx) * 0.2)
+	cvPart = floor(Int, length(idx) * 0.3)
 
 	cvIdx    = sub( idx, 1:cvPart )
 	trainIdx = sub( idx, cvPart+1:length(idx) )
@@ -291,12 +291,12 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 		end
 
 		tr_err = 0
-		for i in idx
+		for i in trainIdx
 			p = Jannet.sampleOnce(nn, [1, x[i]])
    			tr_err .+= (y[i] - p) .^2 / 2
    		end
 
-        train_error = sum(tr_err) / length(idx)
+        train_error = sum(tr_err) / length(trainIdx)
 
         @show train_error
 
