@@ -12,13 +12,13 @@ julia> nn = FFBPNet{Float32}( [3 10 2], learningRate=pi, momentum=0.2 );
 
 ```
 First argument is a layout of network in form of 
-> [ <input size> <layer 1 size>... <layer K size> <output size> ],
+> `[ <input size> <layer 1 size>... <layer K size> <output size> ]`,
 where size corresponds to a number of nodes on the layer, layout organized from left to right, 
 from input layer to the output. Type parameter of template could be any Real type.
 
 ### Train one sample
 ```
-julia> x = Float32[ 1, 0.5, 0.1 ]
+julia> x = Float32[ 1, 0.5, 0.1, 0 ]
 julia> y = Float32[ 0, 1 ]
 julia> learnOnePattern!( nn, x, y )
 ```

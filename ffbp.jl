@@ -1,6 +1,8 @@
 #
 # Alex Karev
 #
+# GNU v3 License
+#
 # Basic FF-BP network playground based on Krose "introduction..."
 #
 # TODO:
@@ -253,10 +255,10 @@ function t2(iters=1)
 	# @show y, sin(x[k])
 end
 
-function t3(t::Type;iters=100000, lr = 0.7, layout= [1 3 1], epsilon=2.3e-5, m = 0.0)
+function t3(t::Type;iters=100000, lr = 0.7, layout= [1 3 1], epsilon=2.3e-5, m = 0.0, f = ftest)
 
 	x = t[0:0.001:1;]
-	y = ftest(x * 2pi)
+	y = f(x * 2pi)
 
 	nn = FFBPNet{t}(layout, learningRate=lr, momentum=m)
 
