@@ -7,6 +7,7 @@
 #
 # TODO:
 #
+#   - implement brain damage strategy
 #   - store/load network to disk
 #   - correct weights initialization
 #   - on-line, parallel training
@@ -15,13 +16,13 @@
 #
 module Jannet
 
-using StatsBase
-
-export sigm, dsigm, FFBPNet, sampleOnce!, sampleOnce
+export sigm, dsigm, ftest
+export FFBPNet
+export sampleOnce!, sampleOnce, learnOnePattern
 
 sigm(z; a=1.0) = 1 ./ (1 + exp(-a * z))
-dsigm(y) = (1 - y) .* y
-ftest(x) = sin(x) / 2 + 0.5
+@inline dsigm(y) = (1 - y) .* y
+@inline ftest(x) = sin(x) / 2 + 0.5
 
 function MakeRandomLayer(t::Type, inp::Int, out::Int)
 	convert( Matrix{t}, rand(-0.1:0.001:0.1,out, inp) )
@@ -40,7 +41,10 @@ type Layer{T<:Real}
 
 	function Layer(inp::Int, out::Int, momentum::Real)
 		inp += 1
-		
+
+		@assert(inp > 1, "wrong numbers of input nodes")
+		@assert(out >= 1, "wrong numbers of output nodes")
+
 		#
 		# Correct random initialization
 		#
@@ -72,7 +76,7 @@ type FFBPNet{T<:Real}
 	learningRate::T
 
 	function FFBPNet(layout::Matrix{Int}; act=sigm, momentum = 0.0, learningRate = 0.4)
-		
+
 		if (length(layout) < 2)
 			error("layout must containg at least one layer: [in <hidden..> out]")
 		end
@@ -88,6 +92,10 @@ type FFBPNet{T<:Real}
 
 		new(layers, act, inpCount, outCount, learningRate)
 	end
+
+end
+
+function store(net::FFBPNet, fileName)
 
 end
 
@@ -193,7 +201,6 @@ end
 # Tests section
 #
 ################################################################################
-
 function t1()
 	nn = FFBPNet{Float32}([1 2 1], learningRate=0.3)
 	
@@ -255,18 +262,30 @@ function t2(iters=1)
 	# @show y, sin(x[k])
 end
 
-function t3(t::Type;iters=100000, lr = 0.7, layout= [1 3 1], epsilon=2.3e-5, m = 0.0, f = ftest)
+function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.0, f=ftest)
 
 	x = t[0:0.001:1;]
 	y = f(x * 2pi)
 
-	nn = FFBPNet{t}(layout, learningRate=lr, momentum=m)
+	nn = FFBPNet{t}(layout, learningRate = lr, momentum = m)
+
+	idx = collect(1:length(x))
+	shuffle!(idx)
+	
+	cvPart = floor(Int, length(idx) * 0.2)
+
+	cvIdx    = sub( idx, 1:cvPart )
+	trainIdx = sub( idx, cvPart+1:length(idx) )
+
+	@show length(cvIdx)
+	@show length(trainIdx)
 
 	train_error = 0
 	for k = 1:iters
 
-		idx = sample(1:length(x), floor(Int,length(x) * 0.7) )
-		for i in idx
+		shuffle!(trainIdx)
+
+		for i in trainIdx
 			# @show x[i], y[i]
 			learnOnePattern!( nn, t[1; x[i]], t[ y[i] ] )
 		end
@@ -279,7 +298,7 @@ function t3(t::Type;iters=100000, lr = 0.7, layout= [1 3 1], epsilon=2.3e-5, m =
 
         train_error = sum(tr_err) / length(idx)
 
-        # @show train_error
+        @show train_error
 
         if train_error < epsilon
         	println("break out earlier on $k iteration")
@@ -289,18 +308,14 @@ function t3(t::Type;iters=100000, lr = 0.7, layout= [1 3 1], epsilon=2.3e-5, m =
 
 	@show train_error
 
-	y1 = sampleOnce(nn, t[1; 0])
-	y2 = sampleOnce(nn, t[1; 0.2]) 
-	y3 = sampleOnce(nn, t[1; 0.25])
-	y4 = sampleOnce(nn, t[1; 0.5]) 
-	y5 = sampleOnce(nn, t[1; 0.75])
-	y6 = sampleOnce(nn, t[1; 1])
+	cvError = 0
+	@inbounds for i in cvIdx
+			p = Jannet.sampleOnce(nn, [1, x[i]])
+   			cvError .+= (y[i] - p) .^2 / 2
+	end
 
-	@show y1,y2
-	@show y3
-	@show y4
-	@show y5
-	@show y6
+	cvError = sum(cvError) ./ length(cvIdx)
+	@show cvError
 
 	return nn
 end

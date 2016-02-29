@@ -32,16 +32,15 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
 ## Tests
 
-Package `StatsBasic` is required for tests.
+### Function approximation
+
 Sample training for function f(x) = sin(x*2pi)/2 + 0.5 in interval for x:[0,1]  approximation:
 
 ```
-julia> @time nn = Jannet.t3(Float32, iters=100000, lr=3, layout=[1 30 60 1], m = 0.3, epsilon=1e-5)
-break out earlier on 5652 iteration
-train_error = 9.61988f-6
+julia> @time nn = Jannet.t3(Float64, iters=10000, lr=3, layout=[1 60 1], m = 0.3, epsilon=5e-6);
+train_error = 9.063752343964018e-6
 ...
-261.377872 seconds (249.39 M allocations: 9.415 GB, 2.06% gc time)
-
+228.910095 seconds (377.72 M allocations: 14.130 GB, 3.72% gc time)
 ```
 `iters` - count of iterations, can break out loop earlier on `train_error <= epsilon`, where `train_error` 
 is average square error for training set.
