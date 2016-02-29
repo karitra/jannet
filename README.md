@@ -28,7 +28,7 @@ First vector is input with first bias activation element (should be equal to one
 ```
 > p = Jannet.sampleOnce(nn, [1, x[i]])
 ```
-In p would be result for x pattern.  Jannet.sampleOnce! version exist.
+In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
 ## Tests
 
@@ -44,7 +44,7 @@ train_error = 9.61988f-6
 
 ```
 `iters` - count of iterations, can break out loop earlier on `train_error <= epsilon`, where `train_error` 
-is average square error for train set.
+is average square error for training set.
 
 Learning results of trained network can be visualized (checked) as follow:
 ```
