@@ -184,7 +184,7 @@ function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T})
 	#
 	for i in eachindex(net.layers)
 
-		scale!(net.layers[i].mW, net.layers[i].momentum)
+ 		scale!(net.layers[i].mW, net.layers[i].momentum)
 
 		@fastmath @inbounds @simd for k in eachindex(net.layers[i].W)
 			net.layers[i].W[k] += net.layers[i].dW[k] + net.layers[i].mW[k]
@@ -274,10 +274,10 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 	
 	cvPart = floor(Int, length(idx) * 0.3)
 
-	cvIdx    = sub( idx, 1:cvPart )
+	testIdx    = sub( idx, 1:cvPart )
 	trainIdx = sub( idx, cvPart+1:length(idx) )
 
-	@show length(cvIdx)
+	@show length(testIdx)
 	@show length(trainIdx)
 
 	train_error = 0
@@ -308,14 +308,14 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 
 	@show train_error
 
-	cvError = 0
-	@inbounds for i in cvIdx
+	testError = 0
+	@inbounds for i in testIdx
 			p = Jannet.sampleOnce(nn, [1, x[i]])
-   			cvError .+= (y[i] - p) .^2 / 2
+   			testError .+= (y[i] - p) .^2 / 2
 	end
 
-	cvError = sum(cvError) ./ length(cvIdx)
-	@show cvError
+	testError = sum(testError) ./ length(testIdx)
+	@show testError
 
 	return nn
 end
