@@ -1,6 +1,6 @@
 # Jannet ANN's playground
 
- Basic (yet artificial, not ready for natural one) neural network implementation in Julia language, for studying purposes.
+ Basic (yet artificial, not ready for natural one) neural network implementation in Julia language. Written for studying purposes.
 
 ## Usage
 
