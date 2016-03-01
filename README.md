@@ -37,10 +37,12 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 Sample training for function f(x) = sin(x*2pi)/2 + 0.5 in interval for x:[0,1]  approximation:
 
 ```
-julia> @time nn = Jannet.t3(Float64, iters=10000, lr=3, layout=[1 60 1], m = 0.3, epsilon=5e-6);
-train_error = 9.063752343964018e-6
+julia> @time nn = Jannet.t3(Float32, iters=1000000, lr=4, layout=[1 50 50 1], m = 0.03, epsilon=1e-5);
 ...
-228.910095 seconds (377.72 M allocations: 14.130 GB, 3.72% gc time)
+break out earlier on 4860 iteration
+train_error = 9.92018f-6
+testError = 8.857888f-6
+522.754328 seconds (436.08 M allocations: 16.246 GB, 1.19% gc time)
 ```
 `iters` - count of iterations, can break out loop earlier on `train_error <= epsilon`, where `train_error` 
 is average square error for training set.
@@ -49,6 +51,10 @@ Learning results of trained network can be visualized (checked) as follow:
 ```
 julia> using Gadfly
 ...
-julia> z = [ Jannet.sampleOnce(nn, Float32[1.0, x])[1] for x in 0:0.02:1 ];
-julia> plot(y=z)
+julia> y = [ Jannet.sampleOnce(nn, Float32[1.0, x])[1] for x in 0:0.02:1 ];
+julia> ysample= Jannet.ftest(0:0.124:1* 2pi)
+...
+julia> draw( PNG("sample.png", 22cm,12cm), plot( layer(y=ysample, Geom.line), layer(y=y, Geom.point, Theme(default_color=colorant"green")), layer(y=(y-ysample).^2*100, Geom.bar, Theme(default_color=colorant"dark red") ) ) )
 ```
+Square error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself [sample plot](sample.png)
+
