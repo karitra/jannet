@@ -270,6 +270,7 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 	nn = FFBPNet{t}(layout, learningRate = lr, momentum = m)
 
 	idx = collect(1:length(x))
+
 	shuffle!(idx)
 	
 	cvPart = floor(Int, length(idx) * 0.3)
@@ -279,6 +280,7 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 
 	@show length(testIdx)
 	@show length(trainIdx)
+
 
 	train_error = 0
 	for k = 1:iters
