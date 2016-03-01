@@ -45,7 +45,7 @@ testError = 8.857888f-6
 522.754328 seconds (436.08 M allocations: 16.246 GB, 1.19% gc time)
 ```
 `iters` - count of iterations, can break out loop earlier on `train_error <= epsilon`, where `train_error` 
-is average square error for training set.
+is average squared error for training set.
 
 Learning results of trained network can be visualized (checked) as follow:
 ```
@@ -56,4 +56,4 @@ julia> ysample= Jannet.ftest(0:0.124:1* 2pi)
 ...
 julia> draw( PNG("sample.png", 22cm,12cm), plot( layer(y=ysample, Geom.line), layer(y=y, Geom.point, Theme(default_color=colorant"green")), layer(y=(y-ysample).^2*100, Geom.bar, Theme(default_color=colorant"dark red") ) ) )
 ```
-Square error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself: ![sample plot](sample.png)
+Squared error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself: ![sample plot](sample.png)

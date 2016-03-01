@@ -20,9 +20,10 @@ export sigm, dsigm, ftest
 export FFBPNet
 export sampleOnce!, sampleOnce, learnOnePattern
 
-sigm(z; a=1.0) = 1 ./ (1 + exp(-a * z))
-@inline dsigm(y) = (1 - y) .* y
+sigm(z; a=0.7) = 1 ./ (1 + exp(-a * z))
+dsigm(y) = (1 - y) .* y
 @inline ftest(x) = sin(x) / 2 + 0.5
+sqrErr(y,p) = (y - p) .^2 / 2
 
 function MakeRandomLayer(t::Type, inp::Int, out::Int)
 	convert( Matrix{t}, rand(-0.1:0.001:0.1,out, inp) )
@@ -38,6 +39,8 @@ type Layer{T<:Real}
 
 	out::Vector{T}
 	err::Vector{T}
+
+	damage::Vector{T}
 
 	function Layer(inp::Int, out::Int, momentum::Real)
 		inp += 1
@@ -55,13 +58,22 @@ type Layer{T<:Real}
 
 		o = Vector{T}(out+1)
 		o[1] = 1.0
+		dmg = ones(T,out)
 
 		err = Vector{T}(out)
 
-		new( w, dw, mw, momentum, o, err)
+		new( w, dw, mw, momentum, o, err, dmg)
 	end
-
 end
+
+function setDamage!(l::Layer, idx::Int, v::Bool = true)
+	l.damage[idx] = v ? 0.0 : 1.0
+end
+
+function clearDamage!(l::Layer)
+	l.damage[:] = 1.0
+end
+
 
 typealias Layers{T} Vector{Layer{T}}
 
@@ -74,6 +86,8 @@ type FFBPNet{T<:Real}
 	outCount::Int
 
 	learningRate::T
+
+	realType
 
 	function FFBPNet(layout::Matrix{Int}; act=sigm, momentum = 0.0, learningRate = 0.4)
 
@@ -90,7 +104,7 @@ type FFBPNet{T<:Real}
 			push!(layers, nl )
 		end
 
-		new(layers, act, inpCount, outCount, learningRate)
+		new(layers, act, inpCount, outCount, learningRate, T)
 	end
 
 end
@@ -99,14 +113,39 @@ function store(net::FFBPNet, fileName)
 
 end
 
-function sampleOnce!{T<:Real}(y::Vector{T}, net::FFBPNet{T}, x::Vector{T})
+function load(net::FFBPNet, fileName)
+
+end
+
+#
+# Set brain damage at layer's l (counting from input) output num
+#
+function setDamage!(net::FFBPNet, l::Int, k::Int, v::Bool = true)
+
+	ll = l - 1 # real layer number, counting input as separate layer
+
+	@assert(ll < length(net.layers) && ll >= 1 && length(net.layers) >= 3, "layer must be hidden one")
+	@assert(k < length(net.layers[ll].out), "node id $k is incorrect")
+
+	setDamage!(net.layers[ll], k, v)
+end
+
+function clearAllDamage!(net::FFBPNet, l::Int)
+	
+	ll = l - 1
+
+	@assert(ll < length(net.layers) && ll >= 1 && length(net.layers) >= 3, "layer must be hidden one")
+	clearDamage!(net.layers[l-1])
+end
+
+function sampleOnce!{T<:Real}(y::Vector{T}, net::FFBPNet{T}, x::Vector{T}; useBrainDamage::Bool = false)
 
 	@assert( length(y) == net.outCount, "Wrong size of output vector, should be $(net.outCount)"    )	
 	@assert( length(x) == net.inpCount + 1, "Wrong size of input vector, should be $(net.inpCount)" )
 
 	a = x
 
-	for lr in net.layers
+	@inbounds for lr in net.layers
 
 		ln = length(lr.out)
 
@@ -115,9 +154,18 @@ function sampleOnce!{T<:Real}(y::Vector{T}, net::FFBPNet{T}, x::Vector{T})
 
 		A_mul_B!(sub(lr.out, 2:ln), lr.W, a)
 		broadcast!(net.act,lr.out,lr.out)
-		
+
+		#
+		# apply 'brain damage' if any
+		#
+		if useBrainDamage && any(x -> x == 0, lr.damage)
+			@fastmath @simd for k in eachindex(lr.damage)
+				lr.out[k+1] *= lr.damage[k]
+			end
+		end
+
 		a = lr.out
-		@inbounds a[1] = 1.0
+		a[1] = 1.0
 
 		# @show a
 	end
@@ -125,9 +173,9 @@ function sampleOnce!{T<:Real}(y::Vector{T}, net::FFBPNet{T}, x::Vector{T})
 	y[:] = a[2:end]
 end
 
-function sampleOnce{T<:Real}(net::FFBPNet{T}, x::Vector{T})
+function sampleOnce{T<:Real}(net::FFBPNet{T}, x::Vector{T}; useBrainDamage::Bool = false)
 	y = Vector{T}(net.outCount)
-	sampleOnce!(y, net, x)
+	sampleOnce!(y, net, x, useBrainDamage=useBrainDamage)
 end
 
 function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T})
@@ -272,15 +320,14 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 	idx = collect(1:length(x))
 
 	shuffle!(idx)
-	
+
 	cvPart = floor(Int, length(idx) * 0.3)
 
-	testIdx    = sub( idx, 1:cvPart )
+	testIdx  = sub( idx, 1:cvPart )
 	trainIdx = sub( idx, cvPart+1:length(idx) )
 
 	@show length(testIdx)
 	@show length(trainIdx)
-
 
 	train_error = 0
 	for k = 1:iters
@@ -294,13 +341,13 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 
 		tr_err = 0
 		for i in trainIdx
-			p = Jannet.sampleOnce(nn, [1, x[i]])
-   			tr_err .+= (y[i] - p) .^2 / 2
+			p = Jannet.sampleOnce(nn, t[1, x[i]])
+   			tr_err .+= sqrErr(y[i],p)
    		end
 
         train_error = sum(tr_err) / length(trainIdx)
 
-        @show train_error
+        println("tr_err($k) $train_error")
 
         if train_error < epsilon
         	println("break out earlier on $k iteration")
@@ -313,7 +360,7 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 	testError = 0
 	@inbounds for i in testIdx
 			p = Jannet.sampleOnce(nn, [1, x[i]])
-   			testError .+= (y[i] - p) .^2 / 2
+   			testError .+= sqrErr(y[i],p)
 	end
 
 	testError = sum(testError) ./ length(testIdx)
@@ -321,5 +368,64 @@ function t3(t::Type;iters=100000, lr = 0.7, layout=[1 3 1], epsilon=2.3e-5, m=0.
 
 	return nn
 end
+
+#
+# Brain damage test
+#
+# Note: network should be trained
+#
+function t4(net::FFBPNet; f = ftest)
+
+	n = length(net.layers) + 1
+	if n < 3
+		println("nets without hidden layer can't be damaged: no brain, no pain")
+		return
+	end
+
+	#
+	# Create test set
+	# 
+	x = net.realType[0:0.001:1;]
+	y = f(x * 2pi)
+
+	#
+	# Construct hidden layers range
+	#
+	hiddenRange = 2:n-1
+
+	minErrLayerId = -1
+	minErrNodeId  = -1
+	minCvError    = Inf
+
+	for hl in hiddenRange
+		for nodeId in eachindex(net.layers[hl-1].damage)
+
+			setDamage!(net, hl, nodeId)
+
+			idx = collect(1:length(x))
+			shuffle!(idx)
+
+			cvError = 0
+			@fastmath @inbounds for i in idx
+				p = sampleOnce(net, net.realType[1.0; x[i] ], useBrainDamage=true )
+				cvError .+= sqrErr(p, y[i])
+			end
+
+			cvError = sum(cvError) ./ length(idx)
+
+			if cvError < minCvError
+				minErrNodeId  = nodeId
+				minErrLayerId = hl
+				minCvError    = cvError
+			end
+
+			setDamage!(net, hl, nodeId, false)
+		end
+	end
+
+
+	minCvError, minErrLayerId, minErrNodeId
+end
+
 
 end
