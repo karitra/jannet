@@ -34,7 +34,7 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
 ### Function approximation
 
-Sample training for function f(x) = sin(x*2pi)/2 + 0.5 in interval for x:[0,1]  approximation:
+Sample training for function ![train function](assets/func.png) in interval for x:[0,1]  approximation:
 
 ```
 julia> @time nn = Jannet.t3(Float32, iters=1000000, lr=4, layout=[1 50 50 1], m = 0.03, epsilon=1e-5);
@@ -58,4 +58,4 @@ julia> draw( PNG("sample.png", 22cm,12cm), plot( layer(y=ysample, Geom.line), la
 ```
 Squared error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself: 
 
-![sample plot](sample.png)
+![sample plot](assets/sample.png)
