@@ -3,22 +3,23 @@
 #
 # GNU v3 License
 #
-# Basic FF-BP network playground based on Krose B. "introduction..."
+# Basic FF-BP network playground based on Krose B. "Introduction..."
 #
 # TODO:
 #
-#   - implement brain damage strategy
+#   - implement brain damage strategy (partly implemented)
 #   - store/load network to disk
 #   - correct weights initialization
-#   - on-line, parallel training
-#   - allocation tuning
+#   - batch, parallel (multi-node) training
+#   - try RPROP
+#   - memory allocations tuning
 #   - vectorized element wise operation
 #
-export sigm, dsigm, ftest, sqrErr
+export sigmoid, dsigm, ftest, sqrErr
 export FFBPNet
-export sampleOnce!, sampleOnce, learnOnePattern!
+export sampleOnce!, sampleOnce, learnOnePattern!, setDamage!
 
-sigm(z; a=0.7) = 1 ./ (1 + exp(-a * z))
+sigmoid(z; a=0.7) = 1 ./ (1 + exp(-a * z))
 
 function sigmVec!(y::Array, z::Array; alpha = 0.7)
 
@@ -42,7 +43,8 @@ end
 type Layer{T<:Real}
 
 	W::Matrix{T}
-	dW::Matrix{T} # sigma W
+	dW::Matrix{T} #  gradient part of W
+	# acc_dW::Matrix{T} # accumulated dW for batch processing
 
 	mW::Matrix{T} # momentum W (aka dW(t-1))
 	momentum::T
@@ -76,6 +78,9 @@ type Layer{T<:Real}
 	end
 end
 
+function applyAcc(ll::Layer)
+end
+
 function setDamage!(l::Layer, idx::Int, v::Bool = true)
 	l.damage[idx] = v ? 0.0 : 1.0
 end
@@ -99,7 +104,7 @@ type FFBPNet{T<:Real}
 
 	realType
 
-	function FFBPNet(layout::Matrix{Int}; act=sigm, momentum = 0.0, learningRate = 0.4)
+	function FFBPNet(layout::Matrix{Int}; act=sigmoid, momentum = 0.0, learningRate = 0.4)
 
 		if (length(layout) < 2)
 			error("layout must containg at least one layer: [in <hidden..> out]")
@@ -189,7 +194,28 @@ function sampleOnce{T<:Real}(net::FFBPNet{T}, x::Vector{T}; useBrainDamage::Bool
 	sampleOnce!(y, net, x, useBrainDamage=useBrainDamage)
 end
 
-function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T})
+@inline function updateWeights!(layer::Layer)
+	scale!(layer.mW, layer.momentum)
+
+	@fastmath @inbounds @simd for k in eachindex(layer.W)
+		layer.W[k] += layer.dW[k] + layer.mW[k]
+		layer.mW[k] = layer.dW[k]
+		# net.layers[i].acc_dW[k] += net.layers[i].dW[k]
+	end
+end
+
+@inline function accWeights!(layer::Layer)
+	scale!(layer.mW, layer.momentum)
+
+	@fastmath @inbounds @simd for k in eachindex(layer.W)
+		layer.acc_dW[k] += layer.dW[k] + layer.mW[k]
+		layer.mW[k] = layer.dW[k]
+		# net.layers[i].acc_dW[k] += net.layers[i].dW[k]
+	end
+end
+
+
+function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T}; batch = false)
 
 	y = sampleOnce(net, x)
 
@@ -207,7 +233,7 @@ function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T})
 			# TODO: remove temporary allocations, if any
 			# original code: 
 			# net.layers[i].err = (d - y) .* dsigm(y)
-			
+			# Note: broadcast seems a little bit slower then SIMD marked loop, but reduce code noise
 			@fastmath @inbounds @simd for k in eachindex(y)
 				net.layers[i].err[k] = (d[k] - y[k]) * dsigm(y[k])
 			end
@@ -223,6 +249,7 @@ function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T})
 
 			# original code:
 			# net.layers[i].err .*= dsigm(y)
+			# Note: broadcast seems a little bit slower then SIMD marked loop, but reduce code noise
 			@fastmath @inbounds @simd for k in eachindex(net.layers[i].err)
 				net.layers[i].err[k] *= dsigm( y[k] )
 			end
@@ -241,17 +268,14 @@ function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T})
 	#
 	# Updating weights
 	#
-	for i in eachindex(net.layers)
-
- 		scale!(net.layers[i].mW, net.layers[i].momentum)
-
-		@fastmath @inbounds @simd for k in eachindex(net.layers[i].W)
-			net.layers[i].W[k] += net.layers[i].dW[k] + net.layers[i].mW[k]
-			net.layers[i].mW[k] = net.layers[i].dW[k]
-			# net.layers[i].acc_dW[k] += net.layers[i].dW[k]
+	if batch
+		@inbounds for i in eachindex(net.layers)
+			accWeights!(net.layers[i])
 		end
-
-		#@show net.layers[i].W
+	else
+		@inbounds for i in eachindex(net.layers)
+			updateWeights!(net.layers[i])
+		end
 	end
 
 end

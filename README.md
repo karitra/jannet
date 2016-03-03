@@ -4,9 +4,12 @@
 
 ## Usage
 
+In order to use module directly from sources root, include path to Jannet module/src folder into LOAD_PATH list, e.g.:
 ```
-julia> include("ffbp.jl")
-
+julia> push!(LOAD_PATH, "./src" );
+```
+```
+julia> using Jannet
 julia> # in nn would be your brand new network
 julia> nn = FFBPNet{Float32}( [3 10 2], learningRate=pi, momentum=0.2 );
 
@@ -26,7 +29,11 @@ First vector is input with first bias activation element (should be equal to one
 
 ### Get the response
 ```
-> p = Jannet.sampleOnce(nn, [1, x[i]])
+julia> p = sampleOnce(nn, x)
+2-element Array{Float32,1}:
+ 0.15596 
+ 0.842187
+
 ```
 In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
@@ -34,17 +41,21 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
 ### Function approximation
 
-Sample training for function ![train function](assets/func.png) in interval for x:[0,1]  approximation:
+Sample training for function ![train function](assets/func.png) approximation:
 
 ```
-julia> @time nn = Jannet.t3(Float32, iters=1000000, lr=4, layout=[1 50 50 1], m = 0.03, epsilon=1e-5);
+julia> include("tests/tests.jl")
 ...
-break out earlier on 4860 iteration
-train_error = 9.92018f-6
-testError = 8.857888f-6
-522.754328 seconds (436.08 M allocations: 16.246 GB, 1.19% gc time)
+julia> @time nn = Tests.t3(Float64, iters=1000000, lr=5, layout=[1 5 7 1], m = 0.05, epsilon=1e-5);
+...
+iter(604) 0.022774 sec   tr_err 0.00001930
+iter(605) 0.022790 sec   tr_err 0.00000953
+break out earlier on 605 iteration
+train_error = 9.52945782156486e-6
+testError = 9.971634658467265e-6
+ 14.698823 seconds (52.59 M allocations: 2.060 GB, 4.00% gc time)
 ```
-`iters` - count of iterations, can break out loop earlier on `train_error <= epsilon`, where `train_error` 
+`iters` - count of iterations, can break out of the loop earlier on `tr_err <= epsilon`, where `tr_err` 
 is average squared error for training set.
 
 Learning results of trained network can be visualized (checked) as follow:
@@ -52,10 +63,10 @@ Learning results of trained network can be visualized (checked) as follow:
 julia> using Gadfly
 ...
 julia> y = [ Jannet.sampleOnce(nn, Float32[1.0, x])[1] for x in 0:0.02:1 ];
-julia> ysample= Jannet.ftest(0:0.124:1* 2pi)
+julia> ysample= Jannet.ftest(0:0.124:1* 2pi);
 ...
-julia> draw( PNG("sample.png", 22cm,12cm), plot( layer(y=ysample, Geom.line), layer(y=y, Geom.point, Theme(default_color=colorant"green")), layer(y=(y-ysample).^2*100, Geom.bar, Theme(default_color=colorant"dark red") ) ) )
+julia> draw( PNG("assets/sample.png", 22cm,12cm), plot( layer(y=ysample, Geom.line), layer(y=y, Geom.point, Theme(default_color=colorant"green")), layer(y=(y-ysample).^2*100, Geom.bar, Theme(default_color=colorant"dark red") ) ) )
 ```
-Squared error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself: 
+Squared error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself:
 
 ![sample plot](assets/sample.png)

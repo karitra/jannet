@@ -112,6 +112,8 @@ function t3(t::Type;iters=1000000, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0
 
 		shuffle!(trainIdx)
 
+		tic()
+
 		for i in trainIdx
 			# @show x[i], y[i]
 			learnOnePattern!( nn, t[1; x[i]], t[ y[i] ] )
@@ -124,8 +126,9 @@ function t3(t::Type;iters=1000000, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0
    		end
 
         train_error = sum(tr_err) / length(trainIdx)
+        elapsed = toq()
 
-        println("tr_err($k) $train_error")
+        @printf("iter(%d) %.6f sec\t tr_err %.8f\n", k, elapsed, train_error)
 
         if train_error < epsilon
         	println("break out earlier on $k iteration")
