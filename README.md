@@ -15,7 +15,9 @@ julia> nn = FFBPNet{Float32}( [3 10 2], learningRate=pi, momentum=0.2 );
 
 ```
 First argument is a layout of network in form of 
-> `[ <input size> <layer 1 size>... <layer K size> <output size> ]`,
+
+> `[ <input size> <layer 1 size>... <layer K size> <output size> ]`
+
 where size corresponds to a number of nodes on the layer, layout organized from left to right, 
 from input layer to the output. Type parameter of template could be any Real type.
 
@@ -44,6 +46,7 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 > Note: path to *Jannet* module should be in `LOAD_PATH` list
 
 Sample training for following function approximation:
+
 ![train function](assets/func.png)
 
 ```
