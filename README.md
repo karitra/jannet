@@ -1,6 +1,6 @@
 # Jannet ANN's playground
 
- Basic (yet artificial, not ready for natural one) neural network implementation in Julia language. Written for studying purposes.
+ Basic (yet artificial, not ready for natural one) neural network implementation in [Julia](http://julialang.org/) language. Written for studying purposes.
 
 ## Usage
 
@@ -8,8 +8,10 @@ In order to use module directly from sources root, include path to Jannet module
 ```
 julia> push!(LOAD_PATH, "./src" );
 ```
+Sorry for following declaration, I'm militant orthodox feminist at hart, but thats Julia convention:
 ```
 julia> using Jannet
+...
 julia> # in nn would be your brand new network
 julia> nn = FFBPNet{Float32}( [3 10 2], learningRate=pi, momentum=0.2 );
 
