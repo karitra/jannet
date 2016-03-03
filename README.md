@@ -41,7 +41,7 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
 ### Function approximation
 
-_Note: path to Jannet module shoud be in LOAD_PATH list_
+> Note: path to *Jannet* module should be in LOAD_PATH list
 
 Sample training for function ![train function](assets/func.png) approximation:
 
@@ -72,3 +72,4 @@ julia> draw( PNG("assets/sample.png", 22cm,12cm), plot( layer(y=ysample, Geom.li
 Squared error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself:
 
 ![sample plot](assets/sample.png)
+
