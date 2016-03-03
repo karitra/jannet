@@ -56,4 +56,6 @@ julia> ysample= Jannet.ftest(0:0.124:1* 2pi)
 ...
 julia> draw( PNG("sample.png", 22cm,12cm), plot( layer(y=ysample, Geom.line), layer(y=y, Geom.point, Theme(default_color=colorant"green")), layer(y=(y-ysample).^2*100, Geom.bar, Theme(default_color=colorant"dark red") ) ) )
 ```
-Squared error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself: ![sample plot](sample.png)
+Squared error rate for sample is shown in red color bars (scaled by 100), sample results are in green dots, and blue line as function itself: 
+
+![sample plot](sample.png)
