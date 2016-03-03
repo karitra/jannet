@@ -41,9 +41,10 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
 ### Function approximation
 
-> Note: path to *Jannet* module should be in LOAD_PATH list
+> Note: path to *Jannet* module should be in `LOAD_PATH` list
 
-Sample training for function ![train function](assets/func.png) approximation:
+Sample training for following function approximation:
+![train function](assets/func.png)
 
 ```
 julia> include("tests/tests.jl")
