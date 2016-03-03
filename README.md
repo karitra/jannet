@@ -41,6 +41,8 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
 ### Function approximation
 
+_Note: path to Jannet module shoud be in LOAD_PATH list_
+
 Sample training for function ![train function](assets/func.png) approximation:
 
 ```
