@@ -60,7 +60,7 @@ iter(604) 0.022774 sec   tr_err 0.00001930
 iter(605) 0.022790 sec   tr_err 0.00000953
 break out earlier on 605 iteration
 train_error = 9.52945782156486e-6
-testError = 9.971634658467265e-6
+test_error = 9.971634658467265e-6
  14.698823 seconds (52.59 M allocations: 2.060 GB, 4.00% gc time)
 ```
 `iters` - count of iterations, can break out of the loop earlier on `tr_err <= epsilon`, where `tr_err` 

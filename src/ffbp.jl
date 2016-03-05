@@ -5,12 +5,18 @@
 #
 # Basic FF-BP network playground based on Krose B. "Introduction..."
 #
+# DONE (aka feature):
+#
+#   - on-line learning
+#   - mini-batch propagation (only subset of patterns in a time processed)
+#
 # TODO:
 #
+#   - check mini-batch algo as it converges extremely slow, suspect typo in implementation (or in tests)
 #   - implement brain damage strategy (partly implemented)
 #   - store/load network to disk
 #   - correct weights initialization
-#   - batch, parallel (multi-node) training
+#   - mini-batch, parallel (multi-node) learning
 #   - try RPROP
 #   - memory allocations tuning
 #   - vectorized element wise operation
@@ -37,14 +43,14 @@ dsigm(y) = (1 - y) .* y
 sqrErr(y,p) = (y - p) .^2 / 2
 
 function MakeRandomLayer(t::Type, inp::Int, out::Int)
-	convert( Matrix{t}, rand(-0.1:0.001:0.1,out, inp) )
+	convert( Matrix{t}, rand(-0.1:0.001:0.1, out, inp) )
 end
 
 type Layer{T<:Real}
 
 	W::Matrix{T}
 	dW::Matrix{T} #  gradient part of W
-	# acc_dW::Matrix{T} # accumulated dW for batch processing
+	accD::Matrix{T} # accumulated dW for batch processing
 
 	mW::Matrix{T} # momentum W (aka dW(t-1))
 	momentum::T
@@ -65,8 +71,9 @@ type Layer{T<:Real}
 		#
 		# w  = Matrix{T}(out,inp)
 		w  = MakeRandomLayer(T, inp, out)
-		dw = MakeRandomLayer(T, inp, out) # Matrix{T}(out,inp)
-		mw = MakeRandomLayer(T, inp, out) # Matrix{T}(out,inp)
+		dw = zeros(T, out, inp)
+		accD = zeros(T, out, inp)
+		mw = zeros(T, out, inp)
 
 		o = Vector{T}(out+1)
 		o[1] = 1.0
@@ -74,7 +81,7 @@ type Layer{T<:Real}
 
 		err = Vector{T}(out)
 
-		new( w, dw, mw, momentum, o, err, dmg)
+		new( w, dw, accD, mw, momentum, o, err, dmg)
 	end
 end
 
@@ -107,7 +114,7 @@ type FFBPNet{T<:Real}
 	function FFBPNet(layout::Matrix{Int}; act=sigmoid, momentum = 0.0, learningRate = 0.4)
 
 		if (length(layout) < 2)
-			error("layout must containg at least one layer: [in <hidden..> out]")
+			error("layout must contain at least one layer: [in <hidden..> out]")
 		end
 
 		layers = Layers{T}()
@@ -188,7 +195,6 @@ function sampleOnce!{T<:Real}(y::Vector{T}, net::FFBPNet{T}, x::Vector{T}; useBr
 	y[:] = a[2:end]
 end
 
-
 function sampleOnce{T<:Real}(net::FFBPNet{T}, x::Vector{T}; useBrainDamage::Bool = false)
 	y = Vector{T}(net.outCount)
 	sampleOnce!(y, net, x, useBrainDamage=useBrainDamage)
@@ -200,7 +206,6 @@ end
 	@fastmath @inbounds @simd for k in eachindex(layer.W)
 		layer.W[k] += layer.dW[k] + layer.mW[k]
 		layer.mW[k] = layer.dW[k]
-		# net.layers[i].acc_dW[k] += net.layers[i].dW[k]
 	end
 end
 
@@ -208,14 +213,67 @@ end
 	scale!(layer.mW, layer.momentum)
 
 	@fastmath @inbounds @simd for k in eachindex(layer.W)
-		layer.acc_dW[k] += layer.dW[k] + layer.mW[k]
-		layer.mW[k] = layer.dW[k]
-		# net.layers[i].acc_dW[k] += net.layers[i].dW[k]
+		layer.accD[k] += layer.dW[k] # + layer.mW[k]
+		# layer.mW[k]    = layer.dW[k]
 	end
 end
 
+@inline function applyBatchDelta!(layer::Layer, learningRate::Real ;count::Int = 1)
 
-function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T}; batch = false)
+	@assert(count > 0, "number of samples must be greater then zero")
+
+	scale!(layer.mW, layer.momentum)
+
+	@fastmath @inbounds @simd for k in eachindex(layer.W)
+
+		layer.W[k] += (learningRate * layer.accD[k] + layer.mW[k]) / count
+		layer.mW[k] = layer.accD[k]
+
+		layer.dW[k]   = 0
+		layer.accD[k] = 0
+	end
+end
+
+@inline function applyBatchDelta!(layer::Layer, accD::Matrix)
+	@assert(size(layer.dW) == size(accD), "accumulated gradient must be of the same size as weights matrix")
+
+	@fastmath @inbounds @simd for k in eachindex(layer.W)
+		layer.W[k] += accD[k]
+	end
+end
+
+@inline function applyBatchDelta!(net::FFBPNet; count::Int = 1)
+	for i in eachindex(net.layers)
+		applyBatchDelta!(net.layers[i], net.learningRate, count = count)
+	end
+end
+
+@inline function applyBatchDelta!(netDst::FFBPNet, netSrc::FFBPNet)
+	for i in eachindex(netDst.layers)
+		applyBatchDelta!(netDst.layers[i], netSrc.layers[i].acc_dW)
+	end
+end
+
+#
+# Samples in matrix is in column order, so iterate column-wise (seems to be a bit faster (not proved) and require less allocation)
+#
+function learnBatch!{T<:Real}(net::FFBPNet{T}, X::Matrix{T}, Y::Matrix{T}, m::Int = -1)
+
+	if m == -1
+		m = size(X,2)
+	end
+
+	@assert( m <= size(X,2) && m <= size(Y,2), "in input (X) and output (Y) should be the same numbers of samples (m, columns)" )
+
+	@inbounds for i in 1:m
+		learnOnePattern!(net, X[:,i], Y[:,i], batch = true)
+	end
+
+	applyBatchDelta!(net)
+end
+
+
+function learnOnePattern!{T<:Real}(net::FFBPNet{T}, x::Vector{T}, d::Vector{T}; batch = false)
 
 	y = sampleOnce(net, x)
 
@@ -262,7 +320,11 @@ function learnOnePattern!{T<:Real}(net::FFBPNet{}, x::Vector{T}, d::Vector{T}; b
 		yi = i == 1 ? x : net.layers[i-1].out
 
 		A_mul_Bt!(net.layers[i].dW, delta, yi)
-		scale!(net.layers[i].dW, net.learningRate)
+
+		if !batch
+			# if batch 'll scale later
+			scale!(net.layers[i].dW, net.learningRate)
+		end
 	end
 
 	#

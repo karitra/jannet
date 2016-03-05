@@ -138,14 +138,14 @@ function t3(t::Type;iters=1000000, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0
 
 	@show train_error
 
-	testError = 0
+	test_error = 0
 	@inbounds for i in testIdx
 			p = Jannet.sampleOnce(nn, [1, x[i]])
-   			testError .+= sqrErr(y[i],p)
+   			test_error .+= sqrErr(y[i],p)
 	end
 
-	testError = sum(testError) ./ length(testIdx)
-	@show testError
+	test_error = sum(test_error) ./ length(testIdx)
+	@show test_error
 
 	return nn
 end
@@ -205,6 +205,60 @@ function t4(net::Jannet.FFBPNet; f = ftest)
 	end
 
 	minCvError, minErrLayerId, minErrNodeId
+end
+
+function t5(t::Type; iters=100, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0.05, f=ftest)
+
+	x = t[0:0.0005:1;]
+	y = f(x * 2pi)
+
+	idx = collect(1:length(x))
+
+	nn = Jannet.FFBPNet{t}(layout, learningRate = lr, momentum = m)
+
+	# @show length(testIdx)
+	# @show length(trainIdx)
+
+	for k = 1:iters
+
+		shuffle!(idx)
+
+		testPart = floor(Int, length(idx) * 0.3)
+
+		testIdx  = sub( idx, 1:testPart )
+		trainIdx = sub( idx, testPart+1:length(idx) )
+
+		bias = ones(t,length(trainIdx),1);
+
+		X = [ bias x[trainIdx] ]'
+		Y = y[trainIdx]'
+
+		# @show size(X)
+		# @show size(Y)
+
+		tic()
+
+		Jannet.learnBatch!(nn, X, Y, size(X,2))
+
+		elapsed = toq()
+
+		test_error = 0
+		@inbounds for i in testIdx
+				p = Jannet.sampleOnce(nn, [1, x[i] ])
+	   			test_error .+= sqrErr( y[i], p)
+		end
+
+		test_error = sum(test_error) ./ length(testIdx)
+
+		@printf("batch(%d) elapsed %.6f sec. \ttest_error %.8f\n", k, elapsed, test_error)
+
+		if test_error < epsilon
+			println("break out earlier on $k iteration")
+			break;
+		end
+	end
+
+	return nn
 end
 
 end
