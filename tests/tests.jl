@@ -207,14 +207,14 @@ function t4(net::Jannet.FFBPNet; f = ftest)
 	minCvError, minErrLayerId, minErrNodeId
 end
 
-function t5(t::Type; iters=100, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0.05, f=ftest)
+function t5(t::Type; iters=100, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0.05, f=ftest, rprop=Jannet.RPROPArgs())
 
 	x = t[0:0.0005:1;]
 	y = f(x * 2pi)
 
 	idx = collect(1:length(x))
 
-	nn = Jannet.FFBPNet{t}(layout, learningRate = lr, momentum = m)
+	nn = Jannet.FFBPNet{t}(layout, learningRate = lr, momentum = m, rprop = rprop)
 
 	# @show length(testIdx)
 	# @show length(trainIdx)
@@ -238,7 +238,7 @@ function t5(t::Type; iters=100, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0.05
 
 		tic()
 
-		Jannet.learnBatch!(nn, X, Y, size(X,2))
+		Jannet.learnBatch!(nn, X, Y, size(X,2) )
 
 		elapsed = toq()
 

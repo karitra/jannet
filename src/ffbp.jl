@@ -50,7 +50,12 @@ type Layer{T<:Real}
 
 	W::Matrix{T}
 	dW::Matrix{T} #  gradient part of W
+
 	accD::Matrix{T} # accumulated dW for batch processing
+
+	# RPROP part
+	delta::Matrix{T} # current gradient step
+	prevSign::Matrix{Bool} # false : sign == -1, true sign == 1
 
 	mW::Matrix{T} # momentum W (aka dW(t-1))
 	momentum::T
@@ -73,6 +78,13 @@ type Layer{T<:Real}
 		w  = MakeRandomLayer(T, inp, out)
 		dw = zeros(T, out, inp)
 		accD = zeros(T, out, inp)
+
+		#
+		# PROP part, may be not used
+		#
+		delta = ones(T, out, inp)
+		sg  = Matrix{Bool}(out, inp)
+
 		mw = zeros(T, out, inp)
 
 		o = Vector{T}(out+1)
@@ -81,7 +93,7 @@ type Layer{T<:Real}
 
 		err = Vector{T}(out)
 
-		new( w, dw, accD, mw, momentum, o, err, dmg)
+		new( w, dw, accD, delta, sg, mw, momentum, o, err, dmg)
 	end
 end
 
@@ -99,6 +111,20 @@ end
 
 typealias Layers{T} Vector{Layer{T}}
 
+type RPROPArgs
+
+	useRPROP::Bool
+
+	minDelta::Real
+	maxDelta::Real
+
+	etaMinus::Real
+	etaPlus::Real
+
+	RPROPArgs(use::Bool = false; minD = 1e-9, maxD = 50, etaMinus = 0.6, etaPlus = 1.5) = 
+		new(use, minD, maxD, etaMinus, etaPlus)
+end
+
 type FFBPNet{T<:Real}
 
 	layers::Layers{T}
@@ -111,7 +137,9 @@ type FFBPNet{T<:Real}
 
 	realType
 
-	function FFBPNet(layout::Matrix{Int}; act=sigmoid, momentum = 0.0, learningRate = 0.4)
+	rprop::RPROPArgs
+
+	function FFBPNet(layout::Matrix{Int}; act=sigmoid, momentum = 0.0, learningRate = 0.4, rprop = RPROPArgs() )
 
 		if (length(layout) < 2)
 			error("layout must contain at least one layer: [in <hidden..> out]")
@@ -126,7 +154,7 @@ type FFBPNet{T<:Real}
 			push!(layers, nl )
 		end
 
-		new(layers, act, inpCount, outCount, learningRate, T)
+		new(layers, act, inpCount, outCount, learningRate, T, rprop)
 	end
 
 end
@@ -140,11 +168,11 @@ function load(net::FFBPNet, fileName)
 end
 
 #
-# Set brain damage at layer's l (counting from input) output num
+# Set brain damage at layer's lr (counting from input) output num
 #
-function setDamage!(net::FFBPNet, l::Int, k::Int, v::Bool = true)
+function setDamage!(net::FFBPNet, lr::Int, k::Int, v::Bool = true)
 
-	ll = l - 1 # real layer number, counting input as separate layer
+	ll = lr - 1 # real layer number, counting input as separate layer
 
 	@assert(ll < length(net.layers) && ll >= 1 && length(net.layers) >= 3, "layer must be hidden one")
 	@assert(k < length(net.layers[ll].out), "node id $k is incorrect")
@@ -209,16 +237,38 @@ end
 	end
 end
 
-@inline function accWeights!(layer::Layer)
-	scale!(layer.mW, layer.momentum)
-
+@inline function accDerivative!(layer::Layer)
 	@fastmath @inbounds @simd for k in eachindex(layer.W)
-		layer.accD[k] += layer.dW[k] # + layer.mW[k]
-		# layer.mW[k]    = layer.dW[k]
+		layer.accD[k] += layer.dW[k]
 	end
 end
 
-@inline function applyBatchDelta!(layer::Layer, learningRate::Real ;count::Int = 1)
+
+function applyRPROPDelta!(layer::Layer, rprop::RPROPArgs)
+
+	@fastmath @inbounds @simd for k in eachindex(layer.W)
+
+		sd = sign(layer.accD[k])
+
+		layer.delta[k] = (sd < -0 && layer.prevSign[k] == false) || (sd > +0 && layer.prevSign[k] == true) ?
+			min(rprop.etaPlus  * layer.delta[k], rprop.maxDelta) :
+			max(rprop.etaMinus * layer.delta[k], rprop.minDelta)
+
+		# save sign of gradient for next iteration
+		layer.prevSign[k] = sd > 0 ? true : false
+		
+		layer.W[k] += sd * layer.delta[k]
+		layer.accD[k] = 0
+	end
+end
+
+@inline function applyRPROPDelta!(net::FFBPNet)
+	@inbounds for i in eachindex(net.layers)
+		applyRPROPDelta!(net.layers[i], net.rprop)
+	end
+end
+
+function applyBatchDelta!(layer::Layer, learningRate::Real ;count::Int = 1)
 
 	@assert(count > 0, "number of samples must be greater then zero")
 
@@ -254,6 +304,19 @@ end
 	end
 end
 
+
+function parLearnBatch!{T<:Real}(net::FFBPNet{T}, X::Matrix{T}, Y::Matrix{T}, m::Int = -1)
+	if m == -1
+		m = size(X,2)
+	end
+
+	@assert( m <= size(X,2) && m <= size(Y,2), "in input (X) and output (Y) should be the same numbers of samples (m, columns)" )
+
+
+
+
+end
+
 #
 # Samples in matrix is in column order, so iterate column-wise (seems to be a bit faster (not proved) and require less allocation)
 #
@@ -269,7 +332,11 @@ function learnBatch!{T<:Real}(net::FFBPNet{T}, X::Matrix{T}, Y::Matrix{T}, m::In
 		learnOnePattern!(net, X[:,i], Y[:,i], batch = true)
 	end
 
-	applyBatchDelta!(net)
+	if net.rprop.useRPROP
+		applyRPROPDelta!(net)
+	else
+		applyBatchDelta!(net)
+	end
 end
 
 
@@ -332,7 +399,7 @@ function learnOnePattern!{T<:Real}(net::FFBPNet{T}, x::Vector{T}, d::Vector{T}; 
 	#
 	if batch
 		@inbounds for i in eachindex(net.layers)
-			accWeights!(net.layers[i])
+			accDerivative!(net.layers[i])
 		end
 	else
 		@inbounds for i in eachindex(net.layers)
