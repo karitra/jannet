@@ -8,7 +8,7 @@ In order to use module directly from sources root, include path to Jannet module
 ```
 julia> push!(LOAD_PATH, "./src" );
 ```
-Sorry for following declaration, I'm militant orthodox feminist at hart, but thats Julia convention:
+Sorry for following declaration, I'm militant orthodox feminist at a heart, but thats Julia convention:
 ```
 julia> using Jannet
 ...

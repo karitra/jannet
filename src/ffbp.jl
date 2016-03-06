@@ -248,16 +248,16 @@ function applyRPROPDelta!(layer::Layer, rprop::RPROPArgs)
 
 	@fastmath @inbounds @simd for k in eachindex(layer.W)
 
-		sd = sign(layer.accD[k])
+		sn = sign(layer.accD[k])
 
-		layer.delta[k] = (sd < -0 && layer.prevSign[k] == false) || (sd > +0 && layer.prevSign[k] == true) ?
+		layer.delta[k] = ( (sn < -0 && layer.prevSign[k] == false) || (sn > +0 && layer.prevSign[k] == true) ) ?
 			min(rprop.etaPlus  * layer.delta[k], rprop.maxDelta) :
 			max(rprop.etaMinus * layer.delta[k], rprop.minDelta)
 
 		# save sign of gradient for next iteration
-		layer.prevSign[k] = sd > 0 ? true : false
+		layer.prevSign[k] = sn > 0 ? true : false
 		
-		layer.W[k] += sd * layer.delta[k]
+		layer.W[k] += sn * layer.delta[k]
 		layer.accD[k] = 0
 	end
 end
