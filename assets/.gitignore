@@ -2,4 +2,7 @@
 *.dvi
 *.log
 *.swp
+*.csv
+img_train1
+hist_code.png
 func.pdf

@@ -1,5 +1,7 @@
 # Jannet ANN's playground
 
+ _One can watch three things forever: running water, burning fire and neural network learning (C)_
+
  Basic (yet artificial, not ready for natural one) neural network implementation in [Julia](http://julialang.org/) language. Written for studying purposes.
 
 ## Usage
@@ -41,6 +43,10 @@ julia> p = sampleOnce(nn, x)
 ```
 In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
+### RPROP
+
+TODO
+
 ## Tests
 
 ### Function approximation
@@ -79,3 +85,17 @@ Squared error rate for sample is shown in red color bars (scaled by 100), sample
 
 ![sample plot](assets/sample.png)
 
+## Kaggle tutorial
+
+TODO
+
+Link
+
+Sample ImageMagick script to prepare tutorial images (planning to do it with help of Julia in upcoming revision):
+
+```
+for fn in {1..6283}.Bmp; do 
+   convert $fn -colorspace gray -bias 20% -define convolve:scale='7!' -morphology Convolve Laplacian:5 \
+    -auto-level -threshold 40% "${fn%.*}".sample.Bmp
+done
+```

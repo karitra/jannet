@@ -22,12 +22,14 @@
 #   - vectorized element wise operation
 #
 export sigmoid, dsigm, ftest, sqrErr
-export FFBPNet
+export RPROPArgs, FFBPNet
 export sampleOnce!, sampleOnce, learnOnePattern!, setDamage!
 
-sigmoid(z; a=0.7) = 1 ./ (1 + exp(-a * z))
+const ALPHA = 1.0
 
-function sigmVec!(y::Array, z::Array; alpha = 0.7)
+sigmoid(z; a=ALPHA) = 1 ./ (1 + exp(-a * z))
+
+function sigmVec!(y::Array, z::Array; alpha = ALPHA)
 
 	@assert(length(y) == length(z), "sigmoid input and output must be of the same size")
 
@@ -38,12 +40,12 @@ function sigmVec!(y::Array, z::Array; alpha = 0.7)
 
 end
 
-dsigm(y) = (1 - y) .* y
+dsigm(y) = ALPHA .* (1 - y) .* y
 @inline ftest(x) = sin(x) / 2 + 0.5
 sqrErr(y,p) = (y - p) .^2 / 2
 
 function MakeRandomLayer(t::Type, inp::Int, out::Int)
-	convert( Matrix{t}, rand(-0.1:0.001:0.1, out, inp) )
+	convert( Matrix{t}, rand(-0.02:1e-6:0.02, out, inp) )
 end
 
 type Layer{T<:Real}
@@ -82,8 +84,8 @@ type Layer{T<:Real}
 		#
 		# PROP part, may be not used
 		#
-		delta = ones(T, out, inp)
-		sg  = Matrix{Bool}(out, inp)
+		delta = ones(T, out, inp) * 0.1
+		sg  = trues(out, inp)  #Matrix{Bool}(out, inp)
 
 		mw = zeros(T, out, inp)
 
@@ -121,7 +123,7 @@ type RPROPArgs
 	etaMinus::Real
 	etaPlus::Real
 
-	RPROPArgs(use::Bool = false; minD = 1e-9, maxD = 50, etaMinus = 0.6, etaPlus = 1.5) = 
+	RPROPArgs(use::Bool = false; minD = 1e-5, maxD = 50, etaMinus = 0.5, etaPlus = 1.2) = 
 		new(use, minD, maxD, etaMinus, etaPlus)
 end
 
@@ -139,6 +141,8 @@ type FFBPNet{T<:Real}
 
 	rprop::RPROPArgs
 
+	epochsPassed::Int
+
 	function FFBPNet(layout::Matrix{Int}; act=sigmoid, momentum = 0.0, learningRate = 0.4, rprop = RPROPArgs() )
 
 		if (length(layout) < 2)
@@ -154,18 +158,18 @@ type FFBPNet{T<:Real}
 			push!(layers, nl )
 		end
 
-		new(layers, act, inpCount, outCount, learningRate, T, rprop)
+		new(layers, act, inpCount, outCount, learningRate, T, rprop, 0)
 	end
 
 end
 
-function store(net::FFBPNet, fileName)
+# function store(net::FFBPNet, fileName)
 
-end
+# end
 
-function load(net::FFBPNet, fileName)
+# function load(net::FFBPNet, fileName)
 
-end
+# end
 
 #
 # Set brain damage at layer's lr (counting from input) output num
@@ -191,18 +195,34 @@ end
 function sampleOnce!{T<:Real}(y::Vector{T}, net::FFBPNet{T}, x::Vector{T}; useBrainDamage::Bool = false)
 
 	@assert( length(y) == net.outCount, "Wrong size of output vector, should be $(net.outCount)"    )	
-	@assert( length(x) == net.inpCount + 1, "Wrong size of input vector, should be $(net.inpCount)" )
+	@assert( length(x) == net.inpCount, "Wrong size of input vector, should be $(net.inpCount)" )
 
 	a = x
 
-	@inbounds for lr in net.layers
+	@inbounds for (i,lr) in enumerate(net.layers)
 
 		ln = length(lr.out)
 
 		# @show a
 		# @show lr.out
 
-		A_mul_B!(sub(lr.out, 2:ln), lr.W, a)
+		if i == 1
+			#
+			# Add weights of the bias separately in case of the first layer in order to get reed of bias in input vector
+			#
+			rows, cols = size(lr.W)
+
+			w = sub(lr.W, :, 2:cols)
+			A_mul_B!(sub(lr.out, 2:ln), w, a)
+
+			# add bias (first column)
+			@fastmath @simd for k in 2:ln 
+				lr.out[k] += lr.W[k-1,1] 
+			end
+		else
+			A_mul_B!(sub(lr.out, 2:ln), lr.W, a)
+		end
+		
 		broadcast!(net.act,lr.out,lr.out)
 
 		#
@@ -250,15 +270,17 @@ function applyRPROPDelta!(layer::Layer, rprop::RPROPArgs)
 
 		sn = sign(layer.accD[k])
 
-		layer.delta[k] = ( (sn < -0 && layer.prevSign[k] == false) || (sn > +0 && layer.prevSign[k] == true) ) ?
-			min(rprop.etaPlus  * layer.delta[k], rprop.maxDelta) :
-			max(rprop.etaMinus * layer.delta[k], rprop.minDelta)
+		if layer.accD[k] != 0.0
+			layer.delta[k] = ( (sn < -0 && layer.prevSign[k] == false) || (sn > +0 && layer.prevSign[k] == true) ) ?
+				min(rprop.etaPlus  * layer.delta[k], rprop.maxDelta) :
+				max(rprop.etaMinus * layer.delta[k], rprop.minDelta)
+		
+				layer.W[k] += sn * layer.delta[k]
+				layer.accD[k] = 0
+		end
 
 		# save sign of gradient for next iteration
 		layer.prevSign[k] = sn > 0 ? true : false
-		
-		layer.W[k] += sn * layer.delta[k]
-		layer.accD[k] = 0
 	end
 end
 
@@ -275,22 +297,19 @@ function applyBatchDelta!(layer::Layer, learningRate::Real ;count::Int = 1)
 	scale!(layer.mW, layer.momentum)
 
 	@fastmath @inbounds @simd for k in eachindex(layer.W)
-
 		layer.W[k] += (learningRate * layer.accD[k] + layer.mW[k]) / count
 		layer.mW[k] = layer.accD[k]
-
-		layer.dW[k]   = 0
 		layer.accD[k] = 0
 	end
 end
 
-@inline function applyBatchDelta!(layer::Layer, accD::Matrix)
-	@assert(size(layer.dW) == size(accD), "accumulated gradient must be of the same size as weights matrix")
+# @inline function applyBatchDelta!(layer::Layer, accD::Matrix)
+# 	@assert(size(layer.dW) == size(accD), "accumulated gradient must be of the same size as weights matrix")
 
-	@fastmath @inbounds @simd for k in eachindex(layer.W)
-		layer.W[k] += accD[k]
-	end
-end
+# 	@fastmath @inbounds @simd for k in eachindex(layer.W)
+# 		layer.W[k] += accD[k]
+# 	end
+# end
 
 @inline function applyBatchDelta!(net::FFBPNet; count::Int = 1)
 	for i in eachindex(net.layers)
@@ -311,16 +330,12 @@ function parLearnBatch!{T<:Real}(net::FFBPNet{T}, X::Matrix{T}, Y::Matrix{T}, m:
 	end
 
 	@assert( m <= size(X,2) && m <= size(Y,2), "in input (X) and output (Y) should be the same numbers of samples (m, columns)" )
-
-
-
-
 end
 
 #
 # Samples in matrix is in column order, so iterate column-wise (seems to be a bit faster (not proved) and require less allocation)
 #
-function learnBatch!{T<:Real}(net::FFBPNet{T}, X::Matrix{T}, Y::Matrix{T}, m::Int = -1)
+function learnBatch!{R<:Real}(net::FFBPNet, X::Matrix{R}, Y::Matrix{R}, m::Int = -1)
 
 	if m == -1
 		m = size(X,2)
@@ -328,9 +343,13 @@ function learnBatch!{T<:Real}(net::FFBPNet{T}, X::Matrix{T}, Y::Matrix{T}, m::In
 
 	@assert( m <= size(X,2) && m <= size(Y,2), "in input (X) and output (Y) should be the same numbers of samples (m, columns)" )
 
+	# @show m
+
 	@inbounds for i in 1:m
 		learnOnePattern!(net, X[:,i], Y[:,i], batch = true)
 	end
+
+	net.epochsPassed += 1
 
 	if net.rprop.useRPROP
 		applyRPROPDelta!(net)
@@ -383,13 +402,28 @@ function learnOnePattern!{T<:Real}(net::FFBPNet{T}, x::Vector{T}, d::Vector{T}; 
 		delta = net.layers[i].err
 
 		# @show delta
+		# @show net.layers[i].out
 
-		yi = i == 1 ? x : net.layers[i-1].out
+		if i == 1
+			yi = x
 
-		A_mul_Bt!(net.layers[i].dW, delta, yi)
+			rows, cols = size(net.layers[i].dW)
 
+			dw = sub(net.layers[i].dW, :, 2:cols)
+
+			# @show i, size(yi), rows, cols
+			A_mul_Bt!(dw, delta, yi)
+
+			@inbounds @simd for k in 1:rows
+				net.layers[i].dW[k,1] = delta[k]
+			end
+		else
+			yi = net.layers[i-1].out
+			A_mul_Bt!(net.layers[i].dW, delta, yi)
+		end
+		
 		if !batch
-			# if batch 'll scale later
+			# if batch, 'll scale later
 			scale!(net.layers[i].dW, net.learningRate)
 		end
 	end

@@ -21,7 +21,7 @@ function t1()
 	nn.layers[2].W[1,2] = 3
 	nn.layers[2].W[1,3] = 7
 
-	y = sampleOnce(nn, Float32[1.0; pi])
+	y = sampleOnce(nn, Float32[ pi ])
 
 	@show nn.layers[1].W
 	@show nn.layers[1].out
@@ -116,12 +116,12 @@ function t3(t::Type;iters=1000000, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0
 
 		for i in trainIdx
 			# @show x[i], y[i]
-			learnOnePattern!( nn, t[1; x[i]], t[ y[i] ] )
+			learnOnePattern!( nn, t[ x[i] ], t[ y[i] ] )
 		end
 
 		tr_err = 0
 		for i in trainIdx
-			p = Jannet.sampleOnce(nn, t[1, x[i]])
+			p = Jannet.sampleOnce(nn, t[ x[i] ])
    			tr_err .+= sqrErr(y[i],p)
    		end
 
@@ -140,7 +140,7 @@ function t3(t::Type;iters=1000000, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0
 
 	test_error = 0
 	@inbounds for i in testIdx
-			p = Jannet.sampleOnce(nn, [1, x[i]])
+			p = Jannet.sampleOnce(nn, t[ x[i] ])
    			test_error .+= sqrErr(y[i],p)
 	end
 
@@ -188,7 +188,7 @@ function t4(net::Jannet.FFBPNet; f = ftest)
 
 			cvError = 0
 			@fastmath @inbounds for i in idx
-				p = sampleOnce(net, net.realType[1.0; x[i] ], useBrainDamage=true )
+				p = sampleOnce(net, net.realType[ x[i] ], useBrainDamage=true )
 				cvError .+= sqrErr(p, y[i])
 			end
 
@@ -228,9 +228,9 @@ function t5(t::Type; iters=100, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0.05
 		testIdx  = sub( idx, 1:testPart )
 		trainIdx = sub( idx, testPart+1:length(idx) )
 
-		bias = ones(t,length(trainIdx),1);
+		# bias = ones(t,length(trainIdx),1);
 
-		X = [ bias x[trainIdx] ]'
+		X = [ x[trainIdx]; ]'
 		Y = y[trainIdx]'
 
 		# @show size(X)
@@ -244,7 +244,7 @@ function t5(t::Type; iters=100, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0.05
 
 		test_error = 0
 		@inbounds for i in testIdx
-				p = Jannet.sampleOnce(nn, [1, x[i] ])
+				p = Jannet.sampleOnce(nn, [ x[i] ])
 	   			test_error .+= sqrErr( y[i], p)
 		end
 
