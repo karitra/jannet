@@ -123,7 +123,7 @@ type RPROPArgs
 	etaMinus::Real
 	etaPlus::Real
 
-	RPROPArgs(use::Bool = false; minD = 1e-5, maxD = 50, etaMinus = 0.5, etaPlus = 1.2) = 
+	RPROPArgs(use::Bool = false; minD = 1e-6, maxD = 60, etaMinus = 0.5, etaPlus = 1.2) = 
 		new(use, minD, maxD, etaMinus, etaPlus)
 end
 
