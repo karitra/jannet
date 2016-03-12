@@ -10,7 +10,7 @@ using Jannet
 #
 ################################################################################
 function t1()
-	nn = Jannet.FFBPNet{Float32}([1 2 1], learningRate=0.3)
+	nn = WeaveNetwork(Float32, [1 2 1], learningRate=0.3)
 	
 	nn.layers[1].W[1,1] = 0.5 
 	nn.layers[1].W[2,1] = 0.5
@@ -36,7 +36,7 @@ function t2(iters=1)
 	x = Float64[0:0.001:pi;]
 	y = ftest(x)
 
-	nn = Jannet.FFBPNet{Float64}([1 2 1], learningRate=0.1)
+	nn = Jannet.WeaveNetwork(Float64, [1 2 1], learningRate=0.1)
 
 	for k in 1:iters
 		for i in eachindex(x)
@@ -93,7 +93,7 @@ function t3(t::Type;iters=1000000, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0
 	x = t[0:0.0005:1;]
 	y = f(x * 2pi)
 
-	nn = Jannet.FFBPNet{t}(layout, learningRate = lr, momentum = m)
+	nn = Jannet.WeaveNetwork(t, layout, learningRate = lr, momentum = m)
 
 	idx = collect(1:length(x))
 
@@ -214,7 +214,8 @@ function t5(t::Type; iters=100, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0.05
 
 	idx = collect(1:length(x))
 
-	nn = Jannet.FFBPNet{t}(layout, learningRate = lr, momentum = m, rprop = rprop)
+	# nn = Jannet.FFBPNet{t}(layout, learningRate = lr, momentum = m, rprop = rprop)
+	nn = Jannet.WeaveNetwork(t, layout, learningRate = lr, momentum = m, rprop = rprop)
 
 	# @show length(testIdx)
 	# @show length(trainIdx)

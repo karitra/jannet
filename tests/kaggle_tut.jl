@@ -12,14 +12,14 @@ const AVG_ERR_STEP = 20
 @inline mkMapping() = [ Char(c) => i for (i,c) in enumerate([ '0':'9'; 'a':'z'; 'A':'Z' ]) ]
 @inline mkRevMapping() = [ c for c in [ '0':'9'; 'a':'z'; 'A':'Z' ] ]
 
-@inline showNorm(net::FFBPNet) = for lr in net.layers @show norm(lr.W) end
+@inline showNorm(net::Jannet.FFBPNet) = for lr in net.layers @show norm(lr.W) end
 
-function loadAllImages(path, d::Dict)
+function loadAllImages(path, d::Dict; imgSize = IMAGE_SIZE)
 
 	imgs = Vector(0)
 
 	for fname in readdir(path)
-		m = match(r"^(\d+)\.sample\.Bmp$", fname)
+		m = match(r"^(\d+)\.\w+\.sample\.Bmp$", fname)
 
 		pth = path * "/" * fname
 
@@ -34,7 +34,7 @@ function loadAllImages(path, d::Dict)
 		imgMat = mean(separate(img),3)
 
 		id = parse(Int, m.captures[1] )
-		push!(imgs, ( d[id], reshape(imgMat, 1, IMAGE_SIZE), id ) )
+		push!(imgs, ( d[id], reshape(imgMat, 1, imgSize), id ) )
 	end
 
 	@printf("read %d images from %s", length(imgs), path)
@@ -57,7 +57,7 @@ function loadLabelsMapping(file)
 	d
 end
 
-function LoadLearnImages(paths::Vector, mapFiles::Vector)
+function LoadLearnImages(paths::Vector, mapFiles::Vector; imgSize::Int = IMAGE_SIZE)
 	
 	md = Vector(0)
 
@@ -73,7 +73,7 @@ function LoadLearnImages(paths::Vector, mapFiles::Vector)
 	imgs = Vector(0)
 
 	for p in paths
-		imSet = loadAllImages(p,d)
+		imSet = loadAllImages(p,d, imgSize = imgSize)
 		append!(imgs, imSet)
 	end
 
@@ -102,13 +102,13 @@ function MakeSamples(t::Type, imgs, n, m, r)
 	X',Y',cl,ids
 end
 
-function LoadKaggleSamples(t::Type, paths::Vector, mapFiles::Vector) 
-	imgs = LoadLearnImages(paths, mapFiles)
-	MakeSamples(t, imgs, length(imgs), IMAGE_SIZE, LABELS_SIZE)
+function LoadKaggleSamples(t::Type, paths::Vector, mapFiles::Vector; imgSize::Int = IMAGE_SIZE) 
+	imgs = LoadLearnImages(paths, mapFiles, imgSize = imgSize)
+	MakeSamples(t, imgs, length(imgs), imgSize, LABELS_SIZE)
 end
 
 
-function LearnKaggleSet(net::Jannet.FFBPNet, iters::Int, X, Y)
+function LearnKaggleSet(net::Jannet.FFBPNet, iters::Int, X, Y; batch = true)
 	
 	idx = collect(1:size(X,2))
     testSize = floor(Int, 0.3 * length(idx))
@@ -135,27 +135,44 @@ function LearnKaggleSet(net::Jannet.FFBPNet, iters::Int, X, Y)
     	count   = fill(30, size(Y,1)) # patterns counts of each type to feed to network
     	fillIdx = 0
 
+    	# @show length(trainIdx)
+
     	for j in trainIdx
 
-    		mx = findfirst(Y[:,j])
+			fillIdx += 1
+
+    		Xsample[:,fillIdx] = X[:,j]
+    		Ysample[:,fillIdx] = Y[:,j]
+
+    		# mx = findfirst(Y[:,j])
 
     		# @show j, idx[j], mx, count[mx]
 
-    		if count[mx] > 0 
-    			fillIdx += 1
+    		# if count[mx] > 0 
+    		# 	fillIdx += 1
 
-    			Xsample[:,fillIdx] = X[:,j]
-    			Ysample[:,fillIdx] = Y[:,j]
+    		# 	Xsample[:,fillIdx] = X[:,j]
+    		# 	Ysample[:,fillIdx] = Y[:,j]
 
-    			count[mx] -= 1
-    		end
+    		# 	count[mx] -= 1
+    		# end
     	end
 
     	# @show fillIdx
 
-    	tic()
-        Jannet.learnBatch!(net, Xsample, Ysample, fillIdx)
-        elapsed = toq()
+    	if batch
+	    	tic()
+	        # Jannet.learnBatch!(net, Xsample, Ysample, fillIdx)
+	        Jannet.learnBatch!(net, X, Y)
+	        elapsed = toq()
+	    else
+	    	tic()
+    		for m in 1:fillIdx
+    			Jannet.learnOnePattern!(net, Xsample[:,m], Ysample[:,m] )
+    		end
+    		net.epochsPassed += 1
+    		elapsed = toq()
+    	end
 
         test_err = 0
         @fastmath @inbounds for k in testIdx
@@ -182,4 +199,5 @@ function LearnKaggleSet(net::Jannet.FFBPNet, iters::Int, X, Y)
         	i, elapsed, test_err, min_error_it, min_error, AVG_ERR_STEP, avg_error, delta_err)
     end
 
+    println("\tnet learned $(net.epochsPassed) epoch")
 end

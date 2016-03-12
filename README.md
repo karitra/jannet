@@ -14,8 +14,8 @@ Sorry for following declaration, I'm militant orthodox feminist at a heart, but 
 ```
 julia> using Jannet
 ...
-julia> # in nn would be your brand new network
-julia> nn = FFBPNet{Float32}( [3 10 2], learningRate=pi, momentum=0.2 );
+julia> # in ann would be your brand new network
+julia> ann = Jannet.WeaveNetwork(Float32, [3 10 2], learningRate=pi, momentum=0.2 );
 
 ```
 First argument is a layout of network in form of 
@@ -27,15 +27,15 @@ from input layer to the output. Type parameter of template could be any Real typ
 
 ### Train one sample
 ```
-julia> x = Float32[ 1, 0.5, 0.1, 0 ]
+julia> x = Float32[ 0.5, 0.1, 0 ]
 julia> y = Float32[ 0, 1 ]
-julia> learnOnePattern!( nn, x, y )
+julia> learnOnePattern!( ann, x, y )
 ```
-First vector is input with first bias activation element (should be equal to one), second is a desired output pattern vector
+First vector is input (w/o first bias activation element), second is a desired output pattern vector
 
 ### Get the response
 ```
-julia> p = sampleOnce(nn, x)
+julia> p = sampleOnce(ann, x)
 2-element Array{Float32,1}:
  0.15596 
  0.842187
@@ -76,7 +76,7 @@ Learning results of trained network can be visualized (checked) as follow:
 ```
 julia> using Gadfly
 ...
-julia> y = [ Jannet.sampleOnce(nn, Float32[1.0, x])[1] for x in 0:0.02:1 ];
+julia> y = [ first( Jannet.sampleOnce(nn, Float32[x]) ) for x in 0:0.02:1 ];
 julia> ysample= Jannet.ftest(0:0.124:1* 2pi);
 ...
 julia> draw( PNG("assets/sample.png", 22cm,12cm), plot( layer(y=ysample, Geom.line), layer(y=y, Geom.point, Theme(default_color=colorant"green")), layer(y=(y-ysample).^2*100, Geom.bar, Theme(default_color=colorant"dark red") ) ) )
@@ -99,3 +99,8 @@ for fn in {1..6283}.Bmp; do
     -auto-level -threshold 40% "${fn%.*}".sample.Bmp
 done
 ```
+
+## References
+
+ - Krose B.
+ - ReidMuller M. et all

@@ -9,6 +9,7 @@
 #
 #   - on-line learning
 #   - mini-batch propagation (only subset of patterns in a time processed)
+#   - try RPROP
 #
 # TODO:
 #
@@ -17,15 +18,20 @@
 #   - store/load network to disk
 #   - correct weights initialization
 #   - mini-batch, parallel (multi-node) learning
-#   - try RPROP
 #   - memory allocations tuning
 #   - vectorized element wise operation
 #
+using JLD
+using DistributedArrays
+
 export sigmoid, dsigm, ftest, sqrErr
-export RPROPArgs, FFBPNet
+export RPROPArgs, MakeNet, WeaveNetwork
 export sampleOnce!, sampleOnce, learnOnePattern!, setDamage!
 
+
 const ALPHA = 1.0
+
+# @enum PrevSign WasMinus=-1 WasPlus=+1 WasChanges=0
 
 sigmoid(z; a=ALPHA) = 1 ./ (1 + exp(-a * z))
 
@@ -46,6 +52,7 @@ sqrErr(y,p) = (y - p) .^2 / 2
 
 function MakeRandomLayer(t::Type, inp::Int, out::Int)
 	convert( Matrix{t}, rand(-0.02:1e-6:0.02, out, inp) )
+	# convert( Matrix{t}, rand(-0.01:1e-3:0.01, out, inp) )
 end
 
 type Layer{T<:Real}
@@ -57,7 +64,8 @@ type Layer{T<:Real}
 
 	# RPROP part
 	delta::Matrix{T} # current gradient step
-	prevSign::Matrix{Bool} # false : sign == -1, true sign == 1
+	#prevSign::Matrix{Bool} # false : sign == -1, true sign == 1
+	prevSign::Matrix{Float32} # TODO: check if it is slower then Float32 (weird things happens)
 
 	mW::Matrix{T} # momentum W (aka dW(t-1))
 	momentum::T
@@ -84,8 +92,8 @@ type Layer{T<:Real}
 		#
 		# PROP part, may be not used
 		#
-		delta = ones(T, out, inp) * 0.1
-		sg  = trues(out, inp)  #Matrix{Bool}(out, inp)
+		delta = ones(T, out, inp) * 0.2
+		sg  = zeros(Float32, out, inp)  #Matrix{Bool}(out, inp)
 
 		mw = zeros(T, out, inp)
 
@@ -123,7 +131,7 @@ type RPROPArgs
 	etaMinus::Real
 	etaPlus::Real
 
-	RPROPArgs(use::Bool = false; minD = 1e-6, maxD = 60, etaMinus = 0.5, etaPlus = 1.2) = 
+	RPROPArgs(use::Bool = false; minD = 1e-6, maxD = 50, etaMinus = 0.5, etaPlus = 1.2) = 
 		new(use, minD, maxD, etaMinus, etaPlus)
 end
 
@@ -142,34 +150,59 @@ type FFBPNet{T<:Real}
 	rprop::RPROPArgs
 
 	epochsPassed::Int
-
-	function FFBPNet(layout::Matrix{Int}; act=sigmoid, momentum = 0.0, learningRate = 0.4, rprop = RPROPArgs() )
-
-		if (length(layout) < 2)
-			error("layout must contain at least one layer: [in <hidden..> out]")
-		end
-
-		layers = Layers{T}()
-		inpCount = layout[1]
-		outCount = layout[end]
-
-		for k in 2:length(layout)
-			nl = Layer{T}( layout[k-1], layout[k], momentum )
-			push!(layers, nl )
-		end
-
-		new(layers, act, inpCount, outCount, learningRate, T, rprop, 0)
-	end
-
 end
 
-# function store(net::FFBPNet, fileName)
 
-# end
+function MakeNet(T::Type, layout::Matrix{Int}; act=sigmoid, momentum = 0.0, learningRate = 0.4, rprop = RPROPArgs() )
 
-# function load(net::FFBPNet, fileName)
+	if (length(layout) < 2)
+		error("layout must contain at least one layer: [in <hidden..> out]")
+	end
 
-# end
+	layers = Layers{T}()
+
+	inpCount = layout[1]
+	outCount = layout[end]
+
+	for k in 2:length(layout)
+		nl = Layer{T}( layout[k-1], layout[k], momentum )
+		push!(layers, nl )
+	end
+
+	FFBPNet{T}(layers, act, inpCount, outCount, learningRate, T, rprop, 0)
+end
+
+WeaveNetwork = MakeNet
+
+function store(fileName::AbstractString, net::FFBPNet)
+	jldopen(fileName, "w", compress=true) do out
+		addrequire(out, Jannet)
+		write(out, "layers", net.layers)
+		write(out, "inputs", net.inpCount)
+		write(out, "outputs", net.outCount)
+		write(out, "learningRate", net.learningRate)
+		write(out, "elType", net.realType)
+		write(out, "rprop", net.rprop)
+		write(out, "epochsPassed", net.epochsPassed)
+	end
+end
+
+#
+# Note: default constructed with sigmoid
+#
+function load(fileName::AbstractString)
+	jldopen(fileName) do inp
+		Jannet.FFBPNet(
+			read(inp, "layers"),
+			sigmoid,
+			read(inp, "inputs"),
+			read(inp, "outputs"),
+			read(inp, "learningRate"),
+			read(inp, "elType"),
+			read(inp, "rprop"),
+			read(inp, "epochsPassed") )
+	end
+end
 
 #
 # Set brain damage at layer's lr (counting from input) output num
@@ -268,19 +301,27 @@ function applyRPROPDelta!(layer::Layer, rprop::RPROPArgs)
 
 	@fastmath @inbounds @simd for k in eachindex(layer.W)
 
-		sn = sign(layer.accD[k])
-
 		if layer.accD[k] != 0.0
-			layer.delta[k] = ( (sn < -0 && layer.prevSign[k] == false) || (sn > +0 && layer.prevSign[k] == true) ) ?
-				min(rprop.etaPlus  * layer.delta[k], rprop.maxDelta) :
-				max(rprop.etaMinus * layer.delta[k], rprop.minDelta)
-		
+			sn = sign(layer.accD[k])
+
+			signState = sn * layer.prevSign[k]
+
+			if signState > 0 # sign the same
+				layer.delta[k] = min(rprop.etaPlus  * layer.delta[k], rprop.maxDelta)
 				layer.W[k] += sn * layer.delta[k]
-				layer.accD[k] = 0
+				layer.prevSign[k] = sn
+			elseif signState < 0  # sign changed
+				layer.delta[k] = max(rprop.etaMinus * layer.delta[k], rprop.minDelta)
+				layer.prevSign[k] = 0
+			else  # sign changed in previous step
+				layer.W[k] += sn * layer.delta[k]
+				layer.prevSign[k] = sn
+			end
+
+			# layer.W[k] += sn * layer.delta[k]
+			layer.accD[k] = 0
 		end
 
-		# save sign of gradient for next iteration
-		layer.prevSign[k] = sn > 0 ? true : false
 	end
 end
 
@@ -324,14 +365,6 @@ end
 end
 
 
-function parLearnBatch!{T<:Real}(net::FFBPNet{T}, X::Matrix{T}, Y::Matrix{T}, m::Int = -1)
-	if m == -1
-		m = size(X,2)
-	end
-
-	@assert( m <= size(X,2) && m <= size(Y,2), "in input (X) and output (Y) should be the same numbers of samples (m, columns)" )
-end
-
 #
 # Samples in matrix is in column order, so iterate column-wise (seems to be a bit faster (not proved) and require less allocation)
 #
@@ -359,7 +392,7 @@ function learnBatch!{R<:Real}(net::FFBPNet, X::Matrix{R}, Y::Matrix{R}, m::Int =
 end
 
 
-function learnOnePattern!{T<:Real}(net::FFBPNet{T}, x::Vector{T}, d::Vector{T}; batch = false)
+function learnOnePattern!{T<:Real}(net::FFBPNet{T}, x::Array{T}, d::Array{T}; batch = false)
 
 	y = sampleOnce(net, x)
 
