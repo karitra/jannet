@@ -239,7 +239,7 @@ function t5(t::Type; iters=100, lr = 0.5, layout=[1 5 6 1], epsilon=1e-6, m=0.05
 
 		tic()
 
-		Jannet.learnBatch!(nn, X, Y, size(X,2) )
+		Jannet.learnBatch!(nn, X, Y, m = size(X,2) )
 
 		elapsed = toq()
 

@@ -22,12 +22,11 @@
 #   - vectorized element wise operation
 #
 using JLD
-using DistributedArrays
 
 export sigmoid, dsigm, ftest, sqrErr
 export RPROPArgs, MakeNet, WeaveNetwork
-export sampleOnce!, sampleOnce, learnOnePattern!, setDamage!
-
+export sampleOnce!, sampleOnce, learnOnePattern!, learnBatch!, setDamage!
+export setAccDerivatives!
 
 const ALPHA = 1.0
 
@@ -296,6 +295,18 @@ end
 	end
 end
 
+@inline function setAccDerivatives!(lr::Layer, acc::Matrix)
+	@fastmath @inbounds @simd for k in eachindex(lr.accD)
+		lr.accD[k] = acc[k]
+	end
+end
+
+function setAccDerivatives!(net::FFBPNet, accs::Array)
+	for k in eachindex(accs)
+		setAccDerivatives!(net.layers[k], accs[k])
+	end
+end
+
 
 function applyRPROPDelta!(layer::Layer, rprop::RPROPArgs)
 
@@ -368,8 +379,7 @@ end
 #
 # Samples in matrix is in column order, so iterate column-wise (seems to be a bit faster (not proved) and require less allocation)
 #
-function learnBatch!{R<:Real}(net::FFBPNet, X::Matrix{R}, Y::Matrix{R}, m::Int = -1)
-
+function learnBatch!{R<:Real}(net::FFBPNet, X::Matrix{R}, Y::Matrix{R}; m::Int = -1, applyReduceStep = true)
 	if m == -1
 		m = size(X,2)
 	end
@@ -384,15 +394,18 @@ function learnBatch!{R<:Real}(net::FFBPNet, X::Matrix{R}, Y::Matrix{R}, m::Int =
 
 	net.epochsPassed += 1
 
-	if net.rprop.useRPROP
-		applyRPROPDelta!(net)
+	if applyReduceStep
+		if net.rprop.useRPROP
+			applyRPROPDelta!(net)
+		else
+			applyBatchDelta!(net)
+		end
 	else
-		applyBatchDelta!(net)
+		return map( lr -> lr.accD, net.layers )
 	end
 end
 
-
-function learnOnePattern!{T<:Real}(net::FFBPNet{T}, x::Array{T}, d::Array{T}; batch = false)
+function learnOnePattern!{R<:Real}(net::FFBPNet{R}, x::AbstractArray{R}, d::AbstractArray{R}; batch = false)
 
 	y = sampleOnce(net, x)
 
