@@ -1,4 +1,5 @@
 train.*
+test.*
 *.aux
 *.dvi
 *.log

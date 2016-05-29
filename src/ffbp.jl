@@ -10,12 +10,12 @@
 #   - on-line learning
 #   - mini-batch propagation (only subset of patterns in a time processed)
 #   - try RPROP
+#   - store/load network to disk
 #
 # TODO:
 #
 #   - check mini-batch algo as it converges extremely slow, suspect typo in implementation (or in tests)
 #   - implement brain damage strategy (partly implemented)
-#   - store/load network to disk
 #   - correct weights initialization
 #   - mini-batch, parallel (multi-node) learning
 #   - memory allocations tuning
@@ -48,6 +48,7 @@ end
 dsigm(y) = ALPHA .* (1 - y) .* y
 @inline ftest(x) = sin(x) / 2 + 0.5
 sqrErr(y,p) = (y - p) .^2 / 2
+
 
 function MakeRandomLayer(t::Type, inp::Int, out::Int)
 	convert( Matrix{t}, rand(-0.02:1e-6:0.02, out, inp) )
@@ -130,7 +131,7 @@ type RPROPArgs
 	etaMinus::Real
 	etaPlus::Real
 
-	RPROPArgs(use::Bool = false; minD = 1e-6, maxD = 50, etaMinus = 0.5, etaPlus = 1.2) = 
+	RPROPArgs(use::Bool = false; minD = 1e-7, maxD = 60, etaMinus = 0.5, etaPlus = 1.2) = 
 		new(use, minD, maxD, etaMinus, etaPlus)
 end
 
@@ -202,6 +203,25 @@ function load(fileName::AbstractString)
 			read(inp, "epochsPassed") )
 	end
 end
+
+function getClassErrors(nn::FFBPNet, X, Y)
+ 	err = 0
+    errRate = 0
+    rng = 1:size(Y,2)
+    for i in rng
+          y = Jannet.sampleOnce(nn, X[:,i] )
+          err += sum((y - Y[:,i]) .^2 / 2)
+          _, sampleId = findmax(y)
+          _, patternId = findmax(Y[:,i])
+           if sampleId != patternId
+                errRate += 1
+           end
+     end
+    err /= length(rng)
+    errRate /= length(rng)
+    err,errRate,1-errRate
+end
+
 
 #
 # Set brain damage at layer's lr (counting from input) output num
@@ -342,28 +362,21 @@ end
 	end
 end
 
-function applyBatchDelta!(layer::Layer, learningRate::Real ;count::Int = 1)
+function applyBatchDelta!(layer::Layer, learningRate::Real)
 
 	@assert(count > 0, "number of samples must be greater then zero")
 
 	scale!(layer.mW, layer.momentum)
 
 	@fastmath @inbounds @simd for k in eachindex(layer.W)
-		layer.W[k] += (learningRate * layer.accD[k] + layer.mW[k]) / count
+		layer.W[k] += learningRate * layer.accD[k] + layer.mW[k]
 		layer.mW[k] = layer.accD[k]
 		layer.accD[k] = 0
 	end
 end
 
-# @inline function applyBatchDelta!(layer::Layer, accD::Matrix)
-# 	@assert(size(layer.dW) == size(accD), "accumulated gradient must be of the same size as weights matrix")
 
-# 	@fastmath @inbounds @simd for k in eachindex(layer.W)
-# 		layer.W[k] += accD[k]
-# 	end
-# end
-
-@inline function applyBatchDelta!(net::FFBPNet; count::Int = 1)
+@inline function applyBatchDelta!(net::FFBPNet)
 	for i in eachindex(net.layers)
 		applyBatchDelta!(net.layers[i], net.learningRate, count = count)
 	end
@@ -415,7 +428,7 @@ function learnOnePattern!{R<:Real}(net::FFBPNet{R}, x::AbstractArray{R}, d::Abst
 
 	for i in lln:-1:1
 
-		# @show i
+		# @shouldw i
 
 		if i == lln # spacial treat to output layer
 			

@@ -47,6 +47,10 @@ In p would be the result for x pattern.  Jannet.sampleOnce! version exist.
 
 TODO
 
+#### Parallel RPROP
+
+
+
 ## Tests
 
 ### Function approximation
@@ -102,5 +106,5 @@ done
 
 ## References
 
- - Krose B.
- - ReidMuller M. et all
+ - Krose B., Smagt. P. An introduction to neural networks. 1996
+ - ReidMiller M. RPROP - Description and Implementation Details. Technical Report. 1994

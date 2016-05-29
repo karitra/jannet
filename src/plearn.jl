@@ -1,9 +1,13 @@
+#
+# author Karev A.
+# description: Part of Jannet library. Parallel (multi-node) learning in batch mode (RPROP)
+#
 using DistributedArrays
 
 summAcc(lr1, lr2) = [ lr1[i] + lr2[i] for i in eachindex(lr1) ]
 
 function parLearnBatch!{T<:Real}(net::Jannet.FFBPNet{T}, iters::Int, X::Matrix{T}, Y::Matrix{T}, m::Int = -1)
-	
+
 	if m == -1
 		m = size(X,2)
 	end
@@ -23,7 +27,7 @@ function parLearnBatch!{T<:Real}(net::Jannet.FFBPNet{T}, iters::Int, X::Matrix{T
 	println("Init of distributed Y array...")
 	Ydist = DArray( (cl,m), workers(), [1, length(workers()) ]) do I
 		r1,r2 = I
-		y = zeros(net.realType, length(r1), length(r2) )
+		y = zeros(net.realType, length(r1), length(r2))
 		y[:,:] = Y[r1, r2]
 	end
 
@@ -57,7 +61,6 @@ function parLearnBatch!{T<:Real}(net::Jannet.FFBPNet{T}, iters::Int, X::Matrix{T
    
    		@printf("parEpoch(%d) %.3f tr_er %.6f\n", i, elapsed, train_err)
 	end
-
 
 	# close(Xdist::DArray)
 	# close(Ydist::DArray)
